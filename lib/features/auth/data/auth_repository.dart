@@ -2,8 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../domain/user_model.dart';
 import '../../../core/services/hive_service.dart';
 import '../../transactions/data/transaction_repository.dart';
@@ -34,6 +35,11 @@ class AuthRepositoryImpl implements AuthRepository {
     _loadUserSession();
   }
 
+  FirebaseDatabase get _db => FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: 'https://trac-4c25b-default-rtdb.firebaseio.com/',
+      );
+
   void _loadUserSession() {
     final userJson = _prefs.getString('user_session');
     if (userJson != null) {
@@ -61,57 +67,55 @@ class AuthRepositoryImpl implements AuthRepository {
       await HiveService.openBoxesForUser(uid);
       
       // 2. Sync user profile
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get()
-          .timeout(const Duration(seconds: 2));
-      if (userDoc.exists && userDoc.data() != null) {
-        final user = UserModel.fromMap(userDoc.data()!);
+      final userRef = _db.ref('users/$uid');
+      final userSnapshot = await userRef.get().timeout(const Duration(seconds: 2));
+      if (userSnapshot.exists && userSnapshot.value != null) {
+        final rawMap = Map<String, dynamic>.from(userSnapshot.value as Map);
+        final user = UserModel.fromMap(rawMap);
         await _saveUserSession(user);
       }
       
       // 3. Sync transactions
-      final txQuery = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('transactions')
-          .get()
-          .timeout(const Duration(seconds: 2));
-      for (var doc in txQuery.docs) {
-        await HiveService.saveItem(HiveService.expensesBoxName, doc.id, doc.data());
+      final txRef = _db.ref('users/$uid/transactions');
+      final txSnapshot = await txRef.get().timeout(const Duration(seconds: 2));
+      if (txSnapshot.exists && txSnapshot.value != null) {
+        final rawMap = Map<dynamic, dynamic>.from(txSnapshot.value as Map);
+        rawMap.forEach((key, val) async {
+          final txMap = Map<String, dynamic>.from(val as Map);
+          await HiveService.saveItem(HiveService.expensesBoxName, key.toString(), txMap);
+        });
       }
       
       // 4. Sync budgets
-      final budgetQuery = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('budgets')
-          .get()
-          .timeout(const Duration(seconds: 2));
-      for (var doc in budgetQuery.docs) {
-        await HiveService.saveItem(HiveService.budgetsBoxName, doc.id, doc.data());
+      final budgetRef = _db.ref('users/$uid/budgets');
+      final budgetSnapshot = await budgetRef.get().timeout(const Duration(seconds: 2));
+      if (budgetSnapshot.exists && budgetSnapshot.value != null) {
+        final rawMap = Map<dynamic, dynamic>.from(budgetSnapshot.value as Map);
+        rawMap.forEach((key, val) async {
+          final budgetMap = Map<String, dynamic>.from(val as Map);
+          await HiveService.saveItem(HiveService.budgetsBoxName, key.toString(), budgetMap);
+        });
       }
       
       // 5. Sync goals
-      final goalQuery = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('goals')
-          .get()
-          .timeout(const Duration(seconds: 2));
-      for (var doc in goalQuery.docs) {
-        await HiveService.saveItem(HiveService.goalsBoxName, doc.id, doc.data());
+      final goalRef = _db.ref('users/$uid/goals');
+      final goalSnapshot = await goalRef.get().timeout(const Duration(seconds: 2));
+      if (goalSnapshot.exists && goalSnapshot.value != null) {
+        final rawMap = Map<dynamic, dynamic>.from(goalSnapshot.value as Map);
+        rawMap.forEach((key, val) async {
+          final goalMap = Map<String, dynamic>.from(val as Map);
+          await HiveService.saveItem(HiveService.goalsBoxName, key.toString(), goalMap);
+        });
       }
       
-      print("Synced all data from Firestore successfully for user $uid");
+      print("Synced all data from Realtime Database successfully for user $uid");
       
       // Reload UI lists with the newly synced data
       _ref.read(transactionListProvider.notifier).loadTransactions();
       _ref.read(budgetListProvider.notifier).loadBudgets();
       _ref.read(goalListProvider.notifier).loadGoals();
     } catch (e) {
-      print("Error syncing user data from Firestore: $e");
+      print("Error syncing user data from Realtime Database: $e");
     }
   }
 
@@ -175,9 +179,8 @@ class AuthRepositoryImpl implements AuthRepository {
           createdAt: DateTime.now(),
         );
         try {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
+          await _db
+              .ref('users/${user.uid}')
               .set(user.toMap())
               .timeout(const Duration(seconds: 2));
         } catch (_) {}
@@ -218,13 +221,12 @@ class AuthRepositoryImpl implements AuthRepository {
       await HiveService.openBoxesForUser(user.uid);
       
       try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
+        await _db
+            .ref('users/${user.uid}')
             .set(user.toMap())
             .timeout(const Duration(seconds: 2));
       } catch (e) {
-        print("Firestore save user error: $e");
+        print("Realtime Database save user error: $e");
       }
       
       final settingsBox = HiveService.getBox(HiveService.settingsBoxName);

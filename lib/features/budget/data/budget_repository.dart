@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'budget_model.dart';
 import '../../../core/services/hive_service.dart';
 import '../../auth/data/auth_repository.dart';
@@ -16,6 +17,11 @@ abstract class BudgetRepository {
 class BudgetRepositoryImpl implements BudgetRepository {
   final _uuid = const Uuid();
 
+  FirebaseDatabase get _db => FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: 'https://trac-4c25b-default-rtdb.firebaseio.com/',
+      );
+
   @override
   Future<List<BudgetModel>> getBudgets() async {
     final rawItems = HiveService.getAllItems(HiveService.budgetsBoxName);
@@ -28,15 +34,12 @@ class BudgetRepositoryImpl implements BudgetRepository {
     
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('budgets')
-          .doc(budget.id)
+      _db
+          .ref('users/$uid/budgets/${budget.id}')
           .set(budget.toMap())
           .timeout(const Duration(seconds: 2))
           .catchError((e) {
-        print("Firestore save budget error: $e");
+        print("Realtime Database save budget error: $e");
         return null;
       });
     }
@@ -48,15 +51,12 @@ class BudgetRepositoryImpl implements BudgetRepository {
     
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('budgets')
-          .doc(id)
-          .delete()
+      _db
+          .ref('users/$uid/budgets/$id')
+          .remove()
           .timeout(const Duration(seconds: 2))
           .catchError((e) {
-        print("Firestore delete budget error: $e");
+        print("Realtime Database delete budget error: $e");
         return null;
       });
     }

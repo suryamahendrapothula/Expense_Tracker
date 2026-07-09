@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../domain/transaction_model.dart';
 import '../../../core/services/hive_service.dart';
 import '../../auth/data/auth_repository.dart';
@@ -16,6 +17,11 @@ abstract class TransactionRepository {
 
 class TransactionRepositoryImpl implements TransactionRepository {
   final _uuid = const Uuid();
+
+  FirebaseDatabase get _db => FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: 'https://trac-4c25b-default-rtdb.firebaseio.com/',
+      );
 
   @override
   Future<List<TransactionModel>> getTransactions() async {
@@ -32,15 +38,12 @@ class TransactionRepositoryImpl implements TransactionRepository {
     
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('transactions')
-          .doc(transaction.id)
+      _db
+          .ref('users/$uid/transactions/${transaction.id}')
           .set(map)
           .timeout(const Duration(seconds: 2))
           .catchError((e) {
-        print("Firestore save transaction error: $e");
+        print("Realtime Database save transaction error: $e");
         return null;
       });
     }
@@ -53,15 +56,12 @@ class TransactionRepositoryImpl implements TransactionRepository {
     
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('transactions')
-          .doc(id)
-          .delete()
+      _db
+          .ref('users/$uid/transactions/$id')
+          .remove()
           .timeout(const Duration(seconds: 2))
           .catchError((e) {
-        print("Firestore delete transaction error: $e");
+        print("Realtime Database delete transaction error: $e");
         return null;
       });
     }

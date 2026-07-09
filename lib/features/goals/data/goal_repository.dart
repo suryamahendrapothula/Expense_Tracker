@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'goal_model.dart';
 import '../../../core/services/hive_service.dart';
 import '../../auth/data/auth_repository.dart';
@@ -17,6 +18,11 @@ abstract class GoalRepository {
 class GoalRepositoryImpl implements GoalRepository {
   final _uuid = const Uuid();
 
+  FirebaseDatabase get _db => FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: 'https://trac-4c25b-default-rtdb.firebaseio.com/',
+      );
+
   @override
   Future<List<GoalModel>> getGoals() async {
     final rawItems = HiveService.getAllItems(HiveService.goalsBoxName);
@@ -29,15 +35,12 @@ class GoalRepositoryImpl implements GoalRepository {
     
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('goals')
-          .doc(goal.id)
+      _db
+          .ref('users/$uid/goals/${goal.id}')
           .set(goal.toMap())
           .timeout(const Duration(seconds: 2))
           .catchError((e) {
-        print("Firestore save goal error: $e");
+        print("Realtime Database save goal error: $e");
         return null;
       });
     }
@@ -64,15 +67,12 @@ class GoalRepositoryImpl implements GoalRepository {
     
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('goals')
-          .doc(id)
-          .delete()
+      _db
+          .ref('users/$uid/goals/$id')
+          .remove()
           .timeout(const Duration(seconds: 2))
           .catchError((e) {
-        print("Firestore delete goal error: $e");
+        print("Realtime Database delete goal error: $e");
         return null;
       });
     }
